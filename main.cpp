@@ -49,11 +49,16 @@ int screen_height=GetSystemMetrics(SM_CYSCREEN);
 int osd_x = 10; // (screen_width-osd_width)/2 ;  //30;
 int osd_y = 5; // (screen_height-osd_height)/2; // 50;
 #define OSD_FONTSIZE 65
-char osdTxt[1024];
+
 
 
 class HandlePM3Data : public PM3MonitorHandler {
+private:
+	int updCount;
+
 public:
+   char osdTxt[1024];
+
 	// attach to this event for live drawing of the curve. (onStrokeDataUpdate gives only the curve at the end of the stroke 
 	void onIncrementalPowerCurveUpdate(PM3Monitor &monitor,unsigned short int a_value,unsigned short int a_index)
 	{ 
@@ -88,26 +93,38 @@ public:
 		}
 */
 	//	sprintf(osdTxt, "Time:  %02d:%02d:%02d\nDist:  %4d m\nPower:  %d Watt\nSplit:  %02.0f:%02.0f\nStokes/min:  %d\nAvg.Str/min:  %02.1f"
-		sprintf(osdTxt, "%02d:%02d:%02d   %4d m\n%d W   Split: %02.0f:%02.0f\n%d s/m (avg %02.1f)"
-			   , strokeData.workTimehours , strokeData.workTimeminutes, strokeData.workTimeseconds  
-			   , strokeData.workDistance 		
-			   , strokeData.power 
-			   , strokeData.splitMinutes , strokeData.splitSeconds			
-			   , strokeData.strokesPerMinute 
-			   , strokeData.strokesPerMinuteAverage 		  
-			);
+		if (updCount < 9) {
+			sprintf_s(osdTxt, sizeof(osdTxt), "%02d:%02d:%02d   %4d m\n%d W   Split: %02.0f:%02.0f\n%d s/m (avg %02.1f)"
+				   , strokeData.workTimehours , strokeData.workTimeminutes, strokeData.workTimeseconds  
+				   , strokeData.workDistance 		
+				   , strokeData.power 
+				   , strokeData.splitMinutes , strokeData.splitSeconds			
+				   , strokeData.strokesPerMinute 
+				   , strokeData.strokesPerMinuteAverage 		  
+				);
+		} else {
+			// Show time and less important statistics
+			SYSTEMTIME st;			
+			GetLocalTime(&st);
+			sprintf_s(osdTxt, sizeof(osdTxt), "%04d-%02d-%02d\n%02d:%02d:%02d\n%d cal  (%d cal/hr)"
+				      , st.wYear, st.wMonth,st.wDay, st.wHour, st.wMinute, st.wSecond
+					  , strokeData.totCalories, strokeData.calHr);
+		}
+
+		updCount++;
+		if (updCount > 11) { updCount = 0; }
 
 		cout << "Drag factor: " << strokeData.dragFactor << "\n";
 		cout << "Work distance: " <<  strokeData.workDistance << "\n";
 		cout << "Work time " <<  strokeData.workTimehours << ":" 
-		<< strokeData.workTimeminutes<< ":" 
-		<< strokeData.workTimeseconds << "\n"; 
+		  << strokeData.workTimeminutes<< ":" << strokeData.workTimeseconds << "\n"; 
 		cout << "Work time: " <<  strokeData.workTime << "\n";
-		cout << "Split: " <<  strokeData.splitMinutes << ":" 
-		<< strokeData.splitSeconds << "\n";
+		cout << "Split: " <<  strokeData.splitMinutes << ":" << strokeData.splitSeconds << "\n";
 		cout << "Power: " <<  strokeData.power << "\n";
 		cout << "Strokes Per Minute Average: " <<  strokeData.strokesPerMinuteAverage << "\n";
 		cout << "Strokes Per Minute: " <<  strokeData.strokesPerMinute << "\n";
+		cout << "Total Calories: " <<   strokeData.totCalories << "\n";
+		cout << "Calories Per Hour: " <<   strokeData.calHr  << "\n";
 		cout << "\n";
 		
 	}	
@@ -133,7 +150,7 @@ void connectPM() {
 	}
 	catch ( PM3Exception& e) {
 		cerr << e.errorText;
-		sprintf(osdTxt, "%s\n",e.errorText);
+		sprintf_s(handler.osdTxt, sizeof(handler.osdTxt), "%s\n",e.errorText);
 		//return e.errorCode;
 	} 	
 }
@@ -145,7 +162,7 @@ void resetPM() {
 	}
 	catch ( PM3Exception& e) {    
 		cerr << e.errorText;
-		sprintf(osdTxt, "%s\n",e.errorText);
+		sprintf_s(handler.osdTxt, sizeof(handler.osdTxt), "%s\n",e.errorText);
 	} 	
 }
 
@@ -189,18 +206,19 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM wParam, LPARAM lParam)
 		RECT rc; // Set the rectangular area/canvas for the operation 
 		SetRect(&rc,0,0,osd_width,osd_height);
 		// Draw whatever is in the osdTxt string buffer.
-		DrawTextEx(hdc,osdTxt,-1,&rc,DT_LEFT|DT_WORDBREAK,0); // Wordbreak for error messages only ;-)		
+		DrawTextEx(hdc,handler.osdTxt,-1,&rc,DT_LEFT|DT_WORDBREAK,0); // Wordbreak for error messages only ;-)		
 		EndPaint(hwnd,&ps); // indicates we are finished painting the window
 		return 0;
 	case WM_TIMER: // called periodically via defined timer, so retrieve data from PM and prepare data for OSD update:					
 		{   
+			BringWindowToTop(hwnd); //MM: Always on top...
 			try {			
 				//monitor.update(); // turned out to only update with stroke events...
 				monitor.update2(); // calling formerly internal "lowResolutionUpdate()"
 			}
 			catch ( PM3Exception& e) {			
 				cerr << e.errorText;
-				sprintf(osdTxt, "%s\n",e.errorText);
+				sprintf_s(handler.osdTxt, sizeof(handler.osdTxt), "%s\n",e.errorText);
 				// try to reconnect after five failed updates...
 				if ((attempt++) > 5) { connectPM(); resetPM(); attempt = 0; }  
 				//return e.errorCode;
@@ -214,6 +232,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM wParam, LPARAM lParam)
 			switch(LOWORD (wParam)) {			
 				case ID_SHOWOSD:  // Show OSD display:
 					ShowWindow(hwnd, 1);
+					BringWindowToTop(hwnd);
 					return 0;
 				case ID_HIDEOSD: // Hide OSD display:
 					ShowWindow(hwnd, 0);
@@ -257,7 +276,7 @@ LRESULT CALLBACK WndProc(HWND hwnd,UINT msg,WPARAM wParam, LPARAM lParam)
 /////////////////////////////////////////////////////////
 int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd,int show)
 {
-	sprintf(osdTxt, "Waiting...");
+	sprintf_s(handler.osdTxt, sizeof(handler.osdTxt), "Waiting...");
 
 	// Init Win32 structures for the OSD "window":
 	WNDCLASSEX wc;
@@ -277,6 +296,9 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd,int show)
 	SetLayeredWindowAttributes(hWnd, RGB(255,255,255), 0, LWA_COLORKEY);
 	// MM: show OSD at the beginning...
 	ShowWindow(hWnd, 1);
+	BringWindowToTop(hWnd);
+
+
 
 	//////////////////////////////
 	connectPM();

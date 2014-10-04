@@ -92,7 +92,9 @@ struct StrokeData
 	uint power;
 	double strokesPerMinuteAverage;
 	uint strokesPerMinute;
-
+	// MM: additional stuff:
+	uint totCalories; // accumulated calories burned  CSAFE_GETCALORIES_CMD 
+	uint calHr;  // calories/Hr derived from pace (GETPACE)
 };
 
 struct TrainingData 

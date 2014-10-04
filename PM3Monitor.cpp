@@ -417,7 +417,9 @@ void PM3Monitor::lowResolutionUpdate()
 	addCSafeData(CSAFE_GETTWORK_CMD);
 	addCSafeData(CSAFE_GETPROGRAM_CMD);
 	addCSafeData(CSAFE_GETHORIZONTAL_CMD);
-	
+	/// MM: extra commands implemented:
+	addCSafeData(CSAFE_GETCALORIES_CMD);
+	//////////////
 	executeCSafeCommand("lowResolutionUpdate tkcmdsetCSAFE_command" );
 	
     uint currentbyte = 0;
@@ -478,14 +480,15 @@ void PM3Monitor::lowResolutionUpdate()
 		datalength = _rsp_data[currentbyte];
 		currentbyte++;
 		
-		// Pace is in seconds/Km
-		
+		// Pace is in seconds/Km		
 		uint pace = _rsp_data[currentbyte] + (_rsp_data[currentbyte + 1] << 8);
-		// get pace in seconds / 500m
-		
+		// MM: get cal/hr: Calories/Hr = (((2.8 / ( pace * pace * pace )) * ( 4.0 * 0.8604)) + 300.0) 
+		double paced = pace/1000.0; // formular needs pace in sec/m (not sec/km)
+		_strokeData.calHr = (( (2.8 / (paced*paced*paced) ) * ( 4.0 * 0.8604) ) + 300.0) ;
+		//----------------
+		// get pace in seconds / 500m		
 		double fPace = pace / 2.0;
-		// convert it to mins/500m
-		
+		// convert it to mins/500m		
 		_strokeData.splitMinutes = floor(fPace / 60);
 		_strokeData.splitSeconds = fPace - (_strokeData.splitMinutes * 60);
 		
@@ -560,6 +563,18 @@ void PM3Monitor::lowResolutionUpdate()
 		currentbyte += datalength;
 		
 	}
+	/////// MM: extra stuff //////////////
+	if (_rsp_data[currentbyte] == CSAFE_GETCALORIES_CMD)
+	{  // Calories in 1 cal resolution, total/accumulated calories burned.
+		currentbyte++;
+		datalength = _rsp_data[currentbyte];
+		currentbyte++;				
+		// Byte 0: Total Calories (LSB)  |  Byte 1: Total Calories (MSB) 		
+		uint cal = _rsp_data[currentbyte] + (_rsp_data[currentbyte + 1] << 8);								
+		_strokeData.totCalories = cal;
+		currentbyte += datalength;
+	}
+	/////////////////////////////////////
 	if (trainingData.programNr!= _trainingData.programNr ||
 		trainingData.hours!= _trainingData.hours || 
 		trainingData.minutes!= _trainingData.minutes ||
